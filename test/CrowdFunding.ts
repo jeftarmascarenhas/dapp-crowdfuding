@@ -1,22 +1,10 @@
 import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
+// import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-const utils = {
-  parseDateToSolidity(timestamp: number) {
-    return Math.floor(timestamp / 1000);
-  },
-  parseDateToJs(timestamp: number) {
-    return timestamp * 1000;
-  },
-  tenMinutes: 10 * 60,
-  delay(time = 1000) {
-    return new Promise((resolve) => {
-      setTimeout(() => resolve("Finish"), time);
-    });
-  },
-};
+const newBaseURI =
+  "https://ipfs.io/ipfs/QmdNw2KZNrdWLYFhjqu9v4d2cRqRRy5wsD6cF7TPVSvz4q/";
 
 describe("CrowdFunding", () => {
   async function deployCrowdFundingFactory() {
@@ -41,13 +29,8 @@ describe("CrowdFunding", () => {
     );
     const [ownerProject] = users;
 
-    const today = new Date();
-    const startAt =
-      utils.parseDateToSolidity(today.getTime()) + utils.tenMinutes;
-    const endAt =
-      utils.parseDateToSolidity(
-        new Date(today.setDate(new Date(today).getDate() + 30)).getTime()
-      ) - utils.tenMinutes;
+    const startAt = (await time.latest()) + 5;
+    const endAt = (await time.latest()) + time.duration.days(30);
 
     const createCrowdFund = await crowdFundingFactory
       .connect(ownerProject)
@@ -75,20 +58,57 @@ describe("CrowdFunding", () => {
       );
   });
 
+  it("Should have baseURI and change baseURI if is owner", async function () {
+    const { crowdFundingFactory, users, goal } = await loadFixture(
+      deployCrowdFundingFactory
+    );
+    const [ownerProject] = users;
+
+    const startAt = (await time.latest()) + 5;
+    const endAt = (await time.latest()) + time.duration.days(30);
+
+    await crowdFundingFactory
+      .connect(ownerProject)
+      .createCrowdFund(
+        ownerProject.address,
+        "My Crowding Funding",
+        goal,
+        startAt,
+        endAt
+      );
+
+    const campaignId = await crowdFundingFactory.campaignId();
+
+    expect(campaignId).to.equal(1);
+
+    const contractAddress = await crowdFundingFactory.crowdFunds(0);
+
+    const project = await ethers.getContractAt(
+      "CrowdFundingTemplate",
+      contractAddress
+    );
+
+    const baseURI = await project.baseUri();
+
+    expect(baseURI).to.be.equal("");
+
+    await project.connect(ownerProject).setTokenURI(newBaseURI);
+    const baseURIUpdated = await project.baseUri();
+
+    expect(baseURIUpdated).to.be.equal(newBaseURI);
+    const tokenURI = await project.tokenURI(1);
+
+    expect(tokenURI).to.be.equal(`${baseURIUpdated}1.json`);
+  });
+
   it("Should pledge, goal and claimed", async function () {
     const { crowdFundingFactory, users, goal } = await loadFixture(
       deployCrowdFundingFactory
     );
     const [ownerProject, donor1, donor2] = users;
 
-    const today = new Date();
-    const startAt = utils.parseDateToSolidity(
-      new Date(today.setSeconds(today.getSeconds() + 1)).getTime()
-    );
-
-    const endAt = utils.parseDateToSolidity(
-      new Date(today.setSeconds(today.getSeconds() + 2)).getTime()
-    );
+    const startAt = (await time.latest()) + 5;
+    const endAt = (await time.latest()) + time.duration.days(30);
 
     await crowdFundingFactory
       .connect(ownerProject)
@@ -116,19 +136,17 @@ describe("CrowdFunding", () => {
     const amount1 = ethers.utils.parseEther("1.2");
     const amount2 = ethers.utils.parseEther("0.9");
 
-    await project.connect(donor1).pledge(amount1, {
+    await time.increase(time.duration.minutes(30));
+
+    await project.connect(donor1).pledge({
       value: amount1,
     });
 
-    await project.connect(donor2).pledge(amount2, {
+    await project.connect(donor2).pledge({
       value: amount2,
     });
 
-    console.log("campaign running");
-
-    await utils.delay(2000);
-
-    console.log("campaign finished");
+    await time.increase(time.duration.days(30));
 
     const balanceAfterPledge = await ethers.provider.getBalance(
       project.address
@@ -163,12 +181,8 @@ describe("CrowdFunding", () => {
     );
     const [ownerProject, donor1, donor2, fakeDonor] = users;
 
-    const today = new Date();
-    const startAt = utils.parseDateToSolidity(today.getTime());
-
-    const endAt = utils.parseDateToSolidity(
-      new Date(today.setSeconds(today.getSeconds() + 20)).getTime()
-    );
+    const startAt = (await time.latest()) + 5;
+    const endAt = (await time.latest()) + time.duration.days(30);
 
     await crowdFundingFactory
       .connect(ownerProject)
@@ -192,23 +206,21 @@ describe("CrowdFunding", () => {
     const amount1 = ethers.utils.parseEther("1.2");
     const amount2 = ethers.utils.parseEther("1.2");
 
-    console.log("starting campaign");
-    await utils.delay(6000);
-    console.log("campaign started");
+    await time.increase(time.duration.minutes(2));
 
-    await project.connect(donor1).pledge(amount1, {
+    await project.connect(donor1).pledge({
       value: amount1,
     });
 
-    await project.connect(donor1).pledge(amount1, {
+    await project.connect(donor1).pledge({
       value: amount1,
     });
 
-    await project.connect(donor2).pledge(amount2, {
+    await project.connect(donor2).pledge({
       value: amount2,
     });
 
-    await project.connect(ownerProject).toggleCanceled();
+    await project.connect(ownerProject).setCanceled();
 
     await expect(project.connect(fakeDonor).refund()).to.be.rejectedWith(
       "not donor"
