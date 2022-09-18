@@ -1,20 +1,39 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "hardhat/console.sol";
+// import "hardhat/console.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 contract CrowdFundingTemplate is ERC721 {
-    event Pledge(uint256 indexed campaignId, address donor, uint256 amount);
-    event Refund(uint256 indexed campaignId, address donor, uint256 amount);
-
-    mapping(address => Donor) public donorsAmount;
-    mapping(address => uint256) public donorsBadges;
+    using Strings for uint256;
 
     Campaign public campaign;
     bool canceled = false;
     uint256 public constant PERIOD = 30 days;
-    uint256 tokendIds;
+    string public baseUri = "";
+    uint256 private tokendIds;
+
+    mapping(address => Donor) public donorsAmount;
+    mapping(address => uint256) public donorsBadges;
+
+    struct Campaign {
+        uint256 id;
+        address owner;
+        string name;
+        uint256 goal;
+        uint256 pledged;
+        uint32 startAt;
+        uint32 endAt;
+        bool claimed;
+    }
+
+    struct Donor {
+        address donor;
+        uint256 amount;
+    }
+
+    event Pledge(uint256 indexed campaignId, address donor, uint256 amount);
+    event Refund(uint256 indexed campaignId, address donor, uint256 amount);
 
     constructor(
         uint256 _id,
@@ -40,28 +59,12 @@ contract CrowdFundingTemplate is ERC721 {
         });
     }
 
-    struct Campaign {
-        uint256 id;
-        address owner;
-        string name;
-        uint256 goal;
-        uint256 pledged;
-        uint32 startAt;
-        uint32 endAt;
-        bool claimed;
-    }
-
-    struct Donor {
-        address donor;
-        uint256 amount;
-    }
-
     modifier onlyOwner() {
         require(campaign.owner == msg.sender, "only owner");
         _;
     }
 
-    function mintNFT(address _donor) public {
+    function mintNFT(address _donor) internal virtual {
         tokendIds++;
         _mint(_donor, tokendIds);
     }
@@ -78,7 +81,7 @@ contract CrowdFundingTemplate is ERC721 {
         }
     }
 
-    function pledge(uint256 _amout) public payable {
+    function pledge() public payable {
         require(!canceled, "canceled");
         require(msg.value >= 0.01 ether, "must be at least 0.01 ETH");
         require(block.timestamp >= campaign.startAt, "not started");
@@ -90,21 +93,21 @@ contract CrowdFundingTemplate is ERC721 {
 
         require(!canceled, "campaign canceled");
 
-        campaign.pledged += _amout;
+        campaign.pledged += msg.value;
         donorsAmount[msg.sender].donor = msg.sender;
-        donorsAmount[msg.sender].amount += _amout;
+        donorsAmount[msg.sender].amount += msg.value;
 
         createBadges();
 
-        emit Pledge(campaign.id, msg.sender, _amout);
+        emit Pledge(campaign.id, msg.sender, msg.value);
     }
 
-    function toggleCanceled() external onlyOwner {
+    function setCanceled() external onlyOwner {
         require(
             campaign.endAt <= block.timestamp + PERIOD,
             "greater than 30 days"
         );
-        canceled = !canceled;
+        canceled = true;
     }
 
     function claim() external onlyOwner {
@@ -141,5 +144,33 @@ contract CrowdFundingTemplate is ERC721 {
         require(success, "fail refund");
 
         emit Refund(campaign.id, msg.sender, amount);
+    }
+
+    function _baseURI() internal view virtual override returns (string memory) {
+        return baseUri;
+    }
+
+    function setTokenURI(string memory _uri) external onlyOwner {
+        baseUri = _uri;
+    }
+
+    function tokenURI(uint256 _tokenId)
+        public
+        view
+        virtual
+        override
+        returns (string memory)
+    {
+        string memory currentBaseURI = _baseURI();
+        return
+            bytes(currentBaseURI).length > 0
+                ? string(
+                    abi.encodePacked(
+                        currentBaseURI,
+                        _tokenId.toString(),
+                        ".json"
+                    )
+                )
+                : "";
     }
 }

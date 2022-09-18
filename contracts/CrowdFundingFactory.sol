@@ -15,7 +15,7 @@ contract CrowdFundingFactory {
     );
 
     CrowdFundingTemplate[] public crowdFunds;
-    uint256 public campaignId = 0;
+    uint256 public campaignId;
 
     function createCrowdFund(
         address _owner,
