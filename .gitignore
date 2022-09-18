@@ -4,6 +4,7 @@ coverage
 coverage.json
 typechain
 typechain-types
+AUDIT.md
 
 #Hardhat files
 cache
